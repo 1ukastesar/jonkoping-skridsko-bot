@@ -90,3 +90,14 @@ def test_rink_filter_is_applied(tmp_path, monkeypatch):
     result = run_once(config, html=html, on_date=date(2025, 12, 28))
     assert result.sessions
     assert all("Gränna" in s.rink for s in result.sessions)
+
+
+def test_describe_config_reports_the_effective_settings(tmp_path):
+    from skridsko_bot.app import describe_config
+
+    text = describe_config(make_config(tmp_path, lookahead_days=3, rink_filter=("gränna",)))
+    assert "lookahead_days=3" in text
+    assert "rinks=gränna" in text
+    assert "webhook=set" in text
+    # The webhook URL is a credential; only its presence is logged.
+    assert "discord.com" not in text

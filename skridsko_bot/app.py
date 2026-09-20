@@ -25,6 +25,21 @@ def target_days(config: Config, today: date) -> list[date]:
     return [today + timedelta(days=offset) for offset in range(config.lookahead_days + 1)]
 
 
+def describe_config(config: Config) -> str:
+    """The settings actually in effect, so a stray .env line is visible in the log."""
+    parts = [
+        f"url={config.url}",
+        f"tz={config.timezone.key}",
+        f"post_at={config.post_at:%H:%M}",
+        f"lookahead_days={config.lookahead_days}",
+        f"rinks={','.join(config.rink_filter) if config.rink_filter else 'all'}",
+        f"post_when_empty={config.post_when_empty}",
+        f"mention={'yes' if config.mention else 'no'}",
+        f"webhook={'set' if config.webhook_url else 'unset'}",
+    ]
+    return " ".join(parts)
+
+
 def touch_health(config: Config) -> None:
     path = Path(config.cache_dir) / HEALTH_FILENAME
     try:
@@ -46,6 +61,12 @@ def run_once(
     now = datetime.now(config.timezone)
     today = on_date or now.date()
     days = target_days(config, today)
+    log.info("config: %s", describe_config(config))
+    log.info(
+        "reporting %d day(s): %s",
+        len(days),
+        ", ".join(day.isoformat() for day in days),
+    )
 
     result = scrape(config, today=today, html=html, session=session)
 
