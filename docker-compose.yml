@@ -1,0 +1,25 @@
+services:
+  skridsko-bot:
+    build: .
+    image: skridsko-bot:1.0.0
+    container_name: skridsko-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - skridsko-cache:/var/cache/skridsko-bot
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  skridsko-cache:
