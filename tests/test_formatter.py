@@ -1,4 +1,4 @@
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
@@ -133,3 +133,34 @@ def test_a_gap_day_inside_the_window_does_not_claim_staleness(real_result):
     description = payload["embeds"][0]["description"]
     assert "refreshed" not in description
     assert "Other days are listed" in description
+
+
+def test_each_day_gets_a_distinct_embed_url(real_result):
+    """Discord merges embeds that share a url, which hid every day but the first."""
+    days = [date(2026, 9, 20), date(2026, 9, 21), date(2026, 9, 22), date(2026, 9, 23)]
+    payload = build_payload(real_result, days, now=NOW)
+    urls = [e["url"] for e in payload["embeds"]]
+    assert len(urls) == 4
+    assert len(set(urls)) == 4
+    assert all(u.startswith("https://www.jonkoping.se/") for u in urls)
+    assert urls[1].endswith("#2026-09-21")
+
+
+def test_embed_count_stays_within_discords_limit(real_result):
+    many = [date(2026, 9, 19) + timedelta(days=i) for i in range(20)]
+    payload = build_payload(real_result, many, now=NOW)
+    assert len(payload["embeds"]) <= 10
+
+
+def test_total_embed_size_stays_within_budget(real_result):
+    from skridsko_bot.formatter import _embeds_length
+
+    many = [date(2026, 9, 19) + timedelta(days=i) for i in range(10)]
+    payload = build_payload(real_result, many, now=NOW)
+    assert _embeds_length(payload["embeds"]) <= 5800
+
+
+def test_no_url_when_the_page_url_is_unknown():
+    empty = ScrapeResult(sessions=[], page_url="")
+    payload = build_payload(empty, [TODAY], now=NOW)
+    assert "url" not in payload["embeds"][0]

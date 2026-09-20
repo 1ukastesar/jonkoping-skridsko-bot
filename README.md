@@ -136,6 +136,18 @@ that mention pucks or weather are attached to the rink as a small note.
   about a same-day cancellation.
 - **The site blocks some automated clients.** If you get 403s, set
   `SKRIDSKO_USER_AGENT` to something identifying with a contact address.
+- **`SKRIDSKO_LOOKAHEAD_DAYS` above 9 is capped.** Discord allows 10 embeds and
+  about 6000 characters per message, so extra days are dropped from the end.
+
+### A Discord quirk worth knowing
+
+Discord merges embeds in the same message that share an identical `url` into one
+rendered embed — that is how multi-image embeds work. With one embed per day
+they all linked to the same page, so only the first day was ever displayed even
+though the payload contained all of them. Each day's embed therefore links to
+`…/skridskoakning-allmanhetens-akning#YYYY-MM-DD`; the fragment is ignored by the
+site and keeps the embeds distinct. `test_each_day_gets_a_distinct_embed_url`
+guards it.
 
 ## When the page layout changes
 

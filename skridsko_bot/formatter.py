@@ -45,6 +45,18 @@ MONTH_EN = (
 FIELD_VALUE_LIMIT = 1024
 DESCRIPTION_LIMIT = 4096
 MAX_FIELDS = 24
+MAX_EMBEDS = 10  # Discord's per-message limit
+TOTAL_EMBED_LIMIT = 5800  # Discord's ~6000 character budget across all embeds
+
+
+def _embeds_length(embeds: list[dict]) -> int:
+    total = 0
+    for embed in embeds:
+        total += len(embed.get("title", "")) + len(embed.get("description", ""))
+        total += len(embed.get("footer", {}).get("text", ""))
+        for field in embed.get("fields", []):
+            total += len(field["name"]) + len(field["value"])
+    return total
 
 
 def human_date(day: date) -> str:
@@ -82,6 +94,19 @@ def _truncate(lines: list[str], limit: int) -> str:
     return "\n".join(out)
 
 
+def embed_url(page_url: str, day: date) -> str | None:
+    """A per-day link.
+
+    Discord merges embeds in one message that share an identical ``url`` into a
+    single rendered embed - the mechanism behind multi-image embeds. With one
+    embed per day they all pointed at the same page, so only the first one was
+    shown. The date fragment makes each link distinct; the page ignores it.
+    """
+    if not page_url:
+        return None
+    return f"{page_url}#{day.isoformat()}"
+
+
 def build_embed(result: ScrapeResult, day: date, *, now: datetime | None = None) -> dict:
     """One embed for one day."""
     sessions = result.sessions_on(day)
@@ -90,7 +115,7 @@ def build_embed(result: ScrapeResult, day: date, *, now: datetime | None = None)
     embed: dict = {
         "title": f"⛸️ Ice skating — {human_date(day)}",
         "color": EMBED_COLOR,
-        "url": result.page_url or None,
+        "url": embed_url(result.page_url, day),
     }
 
     if not sessions:
@@ -159,6 +184,13 @@ def build_payload(
 ) -> dict:
     """The full webhook body: an optional mention plus one embed per day."""
     embeds = [build_embed(result, day, now=now) for day in days]
+
+    # Discord caps a message at 10 embeds and ~6000 characters across them.
+    if len(embeds) > MAX_EMBEDS:
+        embeds = embeds[:MAX_EMBEDS]
+    while len(embeds) > 1 and _embeds_length(embeds) > TOTAL_EMBED_LIMIT:
+        embeds.pop()
+
     payload: dict = {
         "username": "Skridskobot",
         "embeds": embeds,
