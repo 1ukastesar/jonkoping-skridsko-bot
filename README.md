@@ -49,7 +49,7 @@ All settings are environment variables; only the first is required.
 | `SKRIDSKO_TZ` | `Europe/Stockholm` | Timezone for `POST_AT` and for "today" |
 | `SKRIDSKO_LOOKAHEAD_DAYS` | `0` | `0` = today only, `1` = today + tomorrow, … |
 | `SKRIDSKO_RINKS` | all | Comma-separated substrings; only matching rinks are reported |
-| `SKRIDSKO_MENTION` | none | Prefix text, e.g. `<@&ROLE_ID>` or `@here` |
+| `SKRIDSKO_MENTION` | none | Prefix text, e.g. `<@&ROLE_ID>`, `<@USER_ID>`, or `@here` |
 | `SKRIDSKO_POST_WHEN_EMPTY` | `true` | `false` keeps quiet on days with no sessions |
 | `SKRIDSKO_CACHE_DIR` | `/var/cache/skridsko-bot` | Last-good HTML + healthcheck stamp |
 | `SKRIDSKO_LOG_LEVEL` | `INFO` | `DEBUG` also logs per-fragment parsing |

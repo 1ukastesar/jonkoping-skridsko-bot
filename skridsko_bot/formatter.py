@@ -45,8 +45,7 @@ MONTH_EN = (
 FIELD_VALUE_LIMIT = 1024
 DESCRIPTION_LIMIT = 4096
 MAX_FIELDS = 24
-MAX_EMBEDS = 10  # Discord's per-message limit
-TOTAL_EMBED_LIMIT = 5800  # Discord's ~6000 character budget across all embeds
+TOTAL_EMBED_LIMIT = 5800  # Discord's ~6000 character budget for a message
 
 
 def _embeds_length(embeds: list[dict]) -> int:
@@ -94,72 +93,77 @@ def _truncate(lines: list[str], limit: int) -> str:
     return "\n".join(out)
 
 
-def embed_url(page_url: str, day: date) -> str | None:
-    """A per-day link.
+def _no_sessions_text(result: ScrapeResult, day: date) -> str:
+    text = "No public skating (*allmänhetens åkning*) is listed for this day."
+    last = result.last_listed_date
+    if last is not None and last < day:
+        stale_days = (day - last).days
+        text += (
+            f"\nThe page's schedule currently ends on {human_date(last)}"
+            f" ({stale_days} day{'s' if stale_days != 1 else ''} ago), so it may simply"
+            " not have been refreshed yet."
+        )
+    elif last is not None:
+        text += f"\nOther days are listed, up to {human_date(last)} — nothing for this one."
+    return text
 
-    Discord merges embeds in one message that share an identical ``url`` into a
-    single rendered embed - the mechanism behind multi-image embeds. With one
-    embed per day they all pointed at the same page, so only the first one was
-    shown. The date fragment makes each link distinct; the page ignores it.
-    """
-    if not page_url:
-        return None
-    return f"{page_url}#{day.isoformat()}"
 
-
-def build_embed(result: ScrapeResult, day: date, *, now: datetime | None = None) -> dict:
-    """One embed for one day."""
+def _day_blocks(result: ScrapeResult, day: date) -> list[str]:
     sessions = result.sessions_on(day)
     grouped = group_by_rink(sessions)
+    if not sessions:
+        return [_no_sessions_text(result, day)]
+    blocks: list[str] = []
+    for rink, items in grouped.items():
+        blocks.append(f"**{rink}**")
+        blocks.extend(session_line(s) for s in items)
+        blocks.extend(f"-# {note}" for note in result.notes_for(rink))
+    return blocks
 
+
+def build_embed(result: ScrapeResult, days: list[date], *, now: datetime | None = None) -> dict:
+    """One embed covering every requested day."""
     embed: dict = {
-        "title": f"⛸️ Ice skating — {human_date(day)}",
         "color": EMBED_COLOR,
-        "url": embed_url(result.page_url, day),
+        "url": result.page_url or None,
     }
 
-    if not sessions:
-        embed["description"] = (
-            "No public skating (*allmänhetens åkning*) is listed for this day."
-        )
-        last = result.last_listed_date
-        if last is not None and last < day:
-            stale_days = (day - last).days
-            embed["description"] += (
-                f"\nThe page's schedule currently ends on {human_date(last)}"
-                f" ({stale_days} day{'s' if stale_days != 1 else ''} ago), so it may simply"
-                " not have been refreshed yet."
-            )
-        elif last is not None:
-            embed["description"] += (
-                f"\nOther days are listed, up to {human_date(last)} — nothing for this one."
-            )
-    elif len(grouped) <= MAX_FIELDS:
-        embed["fields"] = [
-            {
-                "name": f"🏟️ {rink}"[:256],
-                "value": _truncate(
-                    [session_line(s) for s in items]
-                    + [f"-# {note}" for note in result.notes_for(rink)],
-                    FIELD_VALUE_LIMIT,
-                ),
-                "inline": False,
-            }
-            for rink, items in grouped.items()
-        ]
+    if len(days) == 1:
+        day = days[0]
+        embed["title"] = f"⛸️ Ice skating — {human_date(day)}"[:256]
+        sessions = result.sessions_on(day)
+        grouped = group_by_rink(sessions)
+        if not sessions:
+            embed["description"] = _no_sessions_text(result, day)
+        elif len(grouped) <= MAX_FIELDS:
+            embed["fields"] = [
+                {
+                    "name": f"🏟️ {rink}"[:256],
+                    "value": _truncate(
+                        [session_line(s) for s in items]
+                        + [f"-# {note}" for note in result.notes_for(rink)],
+                        FIELD_VALUE_LIMIT,
+                    ),
+                    "inline": False,
+                }
+                for rink, items in grouped.items()
+            ]
+        else:
+            embed["description"] = _truncate(_day_blocks(result, day), DESCRIPTION_LIMIT)
     else:
+        embed["title"] = f"⛸️ Ice skating — {human_date(days[0])} to {human_date(days[-1])}"[:256]
         blocks: list[str] = []
-        for rink, items in grouped.items():
-            blocks.append(f"**{rink}**")
-            blocks.extend(session_line(s) for s in items)
-            blocks.extend(f"-# {note}" for note in result.notes_for(rink))
+        for day in days:
+            blocks.append(f"__**📅 {human_date(day)}**__")
+            blocks.extend(_day_blocks(result, day))
             blocks.append("")
         embed["description"] = _truncate(blocks, DESCRIPTION_LIMIT)
 
+    all_sessions = [s for day in days for s in result.sessions_on(day)]
     notes: list[str] = []
     if result.fetched_from_cache:
         notes.append("⚠️ Site unreachable — showing the last cached schedule.")
-    unknown = [s for s in sessions if s.puck is PuckStatus.UNKNOWN]
+    unknown = [s for s in all_sessions if s.puck is PuckStatus.UNKNOWN]
     if unknown:
         notes.append(
             f"ℹ️ {len(unknown)} session(s) did not say whether sticks and pucks "
@@ -182,19 +186,13 @@ def build_payload(
     mention: str = "",
     now: datetime | None = None,
 ) -> dict:
-    """The full webhook body: an optional mention plus one embed per day."""
-    embeds = [build_embed(result, day, now=now) for day in days]
-
-    # Discord caps a message at 10 embeds and ~6000 characters across them.
-    if len(embeds) > MAX_EMBEDS:
-        embeds = embeds[:MAX_EMBEDS]
-    while len(embeds) > 1 and _embeds_length(embeds) > TOTAL_EMBED_LIMIT:
-        embeds.pop()
+    """The full webhook body: an optional mention plus one embed covering all days."""
+    embeds = [build_embed(result, days, now=now)] if days else []
 
     payload: dict = {
         "username": "Skridskobot",
         "embeds": embeds,
-        "allowed_mentions": {"parse": ["roles", "everyone"] if mention else []},
+        "allowed_mentions": {"parse": ["roles", "users", "everyone"] if mention else []},
     }
     if mention:
         payload["content"] = mention

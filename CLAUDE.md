@@ -82,12 +82,17 @@ Each of these broke a first attempt and is now covered by a test:
 
 ## Discord quirks
 
-- **Embeds sharing an identical `url` get merged into one.** This silently hid
-  every day but the first when `SKRIDSKO_LOOKAHEAD_DAYS > 0`. Each day's embed
-  now links to `<page>#YYYY-MM-DD`. Guarded by
-  `test_each_day_gets_a_distinct_embed_url` — do not "tidy up" those fragments.
-- Limits: 10 embeds and ~6000 characters per message, 25 fields per embed, 1024
-  characters per field value. `build_payload` trims to fit.
+- The whole report — one day or a full `SKRIDSKO_LOOKAHEAD_DAYS` window — is a
+  **single embed**, not one embed per day. A single day still uses one field
+  per rink; multiple days fall back to one description with a `📅` heading per
+  day, since a week of rinks would blow past the 25-field cap. See
+  `build_embed` in `formatter.py`.
+- Historical note: an earlier version used one embed per day, each linking to
+  `<page>#YYYY-MM-DD` to work around Discord silently merging embeds that
+  share an identical `url`. That workaround no longer applies now that there's
+  only one embed, but keep it in mind if this ever goes back to multi-embed.
+- Limits: 25 fields per embed, 1024 characters per field value, 4096 per
+  description, ~6000 characters per message. `build_embed` truncates to fit.
 - The webhook URL is a credential. It lives in `.env` (git-ignored) and is never
   logged — `describe_config` prints `webhook=set` only.
 

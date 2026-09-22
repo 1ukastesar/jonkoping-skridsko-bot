@@ -36,10 +36,15 @@ def test_unknown_puck_is_stated_explicitly():
     assert "not stated" in session_line(session)
 
 
-def test_payload_has_one_embed_per_day(result):
+def test_payload_has_a_single_embed_for_multiple_days(result):
     payload = build_payload(result, [TODAY, date(2025, 12, 23)], now=NOW)
-    assert len(payload["embeds"]) == 2
-    assert payload["embeds"][0]["title"].endswith("Monday 22 December")
+    assert len(payload["embeds"]) == 1
+    title = payload["embeds"][0]["title"]
+    assert "Monday 22 December" in title
+    assert "Tuesday 23 December" in title
+    description = payload["embeds"][0]["description"]
+    assert "Monday 22 December" in description
+    assert "Tuesday 23 December" in description
 
 
 def test_payload_groups_sessions_by_rink(result):
@@ -65,6 +70,12 @@ def test_mention_is_passed_through(result):
     payload = build_payload(result, [TODAY], mention="<@&1234>", now=NOW)
     assert payload["content"] == "<@&1234>"
     assert "roles" in payload["allowed_mentions"]["parse"]
+
+
+def test_user_mention_is_actually_allowed_to_ping(result):
+    # Discord only pings types listed in allowed_mentions.parse, regardless of content.
+    payload = build_payload(result, [TODAY], mention="<@123456789012345678>", now=NOW)
+    assert "users" in payload["allowed_mentions"]["parse"]
 
 
 def test_cache_warning_reaches_the_embed():
@@ -135,21 +146,17 @@ def test_a_gap_day_inside_the_window_does_not_claim_staleness(real_result):
     assert "Other days are listed" in description
 
 
-def test_each_day_gets_a_distinct_embed_url(real_result):
-    """Discord merges embeds that share a url, which hid every day but the first."""
+def test_multiple_days_share_one_embed_and_url(real_result):
     days = [date(2026, 9, 20), date(2026, 9, 21), date(2026, 9, 22), date(2026, 9, 23)]
     payload = build_payload(real_result, days, now=NOW)
-    urls = [e["url"] for e in payload["embeds"]]
-    assert len(urls) == 4
-    assert len(set(urls)) == 4
-    assert all(u.startswith("https://www.jonkoping.se/") for u in urls)
-    assert urls[1].endswith("#2026-09-21")
+    assert len(payload["embeds"]) == 1
+    assert payload["embeds"][0]["url"] == "https://www.jonkoping.se/"
 
 
-def test_embed_count_stays_within_discords_limit(real_result):
+def test_lookahead_still_fits_in_a_single_message(real_result):
     many = [date(2026, 9, 19) + timedelta(days=i) for i in range(20)]
     payload = build_payload(real_result, many, now=NOW)
-    assert len(payload["embeds"]) <= 10
+    assert len(payload["embeds"]) == 1
 
 
 def test_total_embed_size_stays_within_budget(real_result):
